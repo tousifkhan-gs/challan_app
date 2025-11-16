@@ -269,6 +269,32 @@ def delete_challan(challan_id):
     return redirect(url_for("view_all_challans"))
 
 
+@app.route("/admin/register", methods=["GET", "POST"])
+@login_required
+def register_user():
+    if current_user.role != "admin":
+        flash("Unauthorized access")
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        name = request.form['name']
+        username = request.form['username']
+        password = request.form['password']
+        role = request.form['role']  # admin or warden
+
+        if User.query.filter_by(username=username).first():
+            flash("Username already exists")
+            return redirect(url_for("register_user"))
+
+        new_user = User(name=name, username=username, password=password, role=role)
+        db.session.add(new_user)
+        db.session.commit()
+        flash(f"{role.capitalize()} registered successfully")
+        return redirect(url_for("admin_dashboard"))
+
+    return render_template("register_user.html")
+
+
 # ----------------- Run App -----------------
 if __name__ == "__main__":
     with app.app_context():
@@ -287,3 +313,4 @@ if __name__ == "__main__":
             print("Admin user created: username=admin, password=admin")
 
     app.run(debug=False, host="0.0.0.0")
+
