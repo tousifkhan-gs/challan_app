@@ -5,7 +5,6 @@ from flask_login import (
     LoginManager, UserMixin, login_user, login_required,
     current_user, logout_user
 )
-from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import qrcode
 import io
@@ -14,7 +13,6 @@ import base64
 # ----------------- Flask App Setup -----------------
 app = Flask(__name__)
 
-# Production settings (no .env needed)
 app.config['SECRET_KEY'] = 'CHANGE_THIS_SECRET_KEY_123456789'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///traffic.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -32,7 +30,7 @@ class User(UserMixin, db.Model):
     name = db.Column(db.String(150))
     username = db.Column(db.String(50), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
-    role = db.Column(db.String(20))  # admin or warden
+    role = db.Column(db.String(20))  
     active = db.Column(db.Boolean, default=True)
     session_token = db.Column(db.String(100), nullable=True)
 
@@ -84,12 +82,12 @@ def login():
         username = request.form["username"].strip()
         password = request.form["password"].strip()
 
-        user = User.query.filter_by(username=username).first()
+        user = User.query.filter_by(username=username, password=password).first()
 
-        if user and check_password_hash(user.password, password) and user.active:
+        if user and user.active:
             login_user(user)
 
-            # Issue session token
+            # Generate session token
             token = os.urandom(16).hex()
             user.session_token = token
             session["session_token"] = token
@@ -141,7 +139,7 @@ def create_warden():
 
     name = request.form["name"]
     username = request.form["username"]
-    password = generate_password_hash(request.form["password"])
+    password = request.form["password"]
 
     warden = User(name=name, username=username, password=password, role="warden")
     db.session.add(warden)
@@ -172,7 +170,7 @@ def force_logout_warden(warden_id):
         flash("Unauthorized")
         return redirect(url_for("login"))
 
-    warden = User.query.get(warden_id)
+    warden = User.query.get_or_404(warden_id)
     warden.session_token = None
     db.session.commit()
 
@@ -242,7 +240,7 @@ def view_challan(challan_id):
                            qr_code=qr_code)
 
 
-# ----------------- Admin View Challans -----------------
+# ----------------- Admin View All Challans -----------------
 @app.route("/admin/challans")
 @login_required
 def view_all_challans():
@@ -276,12 +274,12 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
 
-        # Create default admin (hashed password)
+        # Create default admin if not exists
         if not User.query.filter_by(username="admin").first():
             admin = User(
                 name="Admin",
                 username="admin",
-                password=generate_password_hash("admin"),
+                password="admin",
                 role="admin"
             )
             db.session.add(admin)
