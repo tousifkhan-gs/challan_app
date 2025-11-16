@@ -1,20 +1,29 @@
+# app.py
 import os
-from flask import Flask, render_template, request, redirect, url_for, flash, session
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin, login_user, login_required, current_user, logout_user
-from datetime import datetime
-import qrcode
 import io
 import base64
-import pdfkit
+from datetime import datetime
 
-# ----------------- Flask App Setup -----------------
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, login_required, current_user, logout_user
+from werkzeug.security import generate_password_hash, check_password_hash
+import qrcode
+
+# Optional pdfkit import (only used if wkhtmltopdf path is provided)
+try:
+    import pdfkit
+except Exception:
+    pdfkit = None
+
+# ----------------- Config -----------------
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'supersecretkey'
-#app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///traffic.db?check_same_thread=False'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///traffic.db'
-db = SQLAlchemy(app)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'supersecretkey')
+# Use DATABASE_URL env var if present (for future migration), otherwise use local sqlite file
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///traffic.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
@@ -24,11 +33,17 @@ SERVICE_FEE = 17
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150))
-    username = db.Column(db.String(50), unique=True)
-    password = db.Column(db.String(100))
+    username = db.Column(db.String(50), unique=True, nullable=False)
+    password = db.Column(db.String(256), nullable=False)  # hashed
     role = db.Column(db.String(20))  # admin or warden
     active = db.Column(db.Boolean, default=True)
     session_token = db.Column(db.String(100), nullable=True)
+
+    def set_password(self, raw):
+        self.password = generate_password_hash(raw)
+
+    def check_password(self, raw):
+        return check_password_hash(self.password, raw)
 
 class Challan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -38,22 +53,32 @@ class Challan(db.Model):
     violation_code = db.Column(db.String(50))
     challan_amount = db.Column(db.Integer)
     received_by = db.Column(db.String(100))
-    timestamp = db.Column(db.String(50))
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     warden_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    warden = db.relationship('User', backref='challans')
 
 # ----------------- Login Manager -----------------
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    try:
+        return User.query.get(int(user_id))
+    except Exception:
+        return None
 
+# Avoid redirect loop: only check for force-logout on endpoints that require login and not static/login endpoints
 @app.before_request
 def check_force_logout():
-    if current_user.is_authenticated and current_user.role == "warden":
-        token = session.get("session_token")
-        if token != current_user.session_token:
-            logout_user()
-            flash("You have been logged out by admin")
-            return redirect(url_for("login"))
+    # skip when not authenticated or when hitting login/logout/static endpoints
+    if not current_user.is_authenticated:
+        return
+    if current_user.role != "warden":
+        return
+    # if user has been force-logged out by admin (session token mismatch), log them out
+    token = session.get("session_token")
+    if token and current_user.session_token and token != current_user.session_token:
+        logout_user()
+        flash("You have been logged out by admin")
+        return redirect(url_for("login"))
 
 # ----------------- QR Code -----------------
 def generate_qr(data):
@@ -71,10 +96,10 @@ def generate_qr(data):
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form['username']
-        password = request.form['password']
-        user = User.query.filter_by(username=username, password=password).first()
-        if user and user.active:
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        user = User.query.filter_by(username=username).first()
+        if user and user.active and user.check_password(password):
             login_user(user)
             token = os.urandom(16).hex()
             user.session_token = token
@@ -104,7 +129,7 @@ def admin_dashboard():
     warden_stats = []
     for w in wardens:
         challans = Challan.query.filter_by(warden_id=w.id).all()
-        total_amount = sum(c.challan_amount + SERVICE_FEE for c in challans)
+        total_amount = sum((c.challan_amount or 0) + SERVICE_FEE for c in challans)
         warden_stats.append({
             "warden": w,
             "challans_created": len(challans),
@@ -118,10 +143,17 @@ def create_warden():
     if current_user.role != "admin":
         flash("Unauthorized")
         return redirect(url_for("login"))
-    name = request.form['name']
-    username = request.form['username']
-    password = request.form['password']
-    warden = User(name=name, username=username, password=password, role="warden")
+    name = request.form.get('name', '').strip()
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '')
+    if not username or not password:
+        flash("Username and password required")
+        return redirect(url_for('admin_dashboard'))
+    if User.query.filter_by(username=username).first():
+        flash("Username already exists")
+        return redirect(url_for('admin_dashboard'))
+    warden = User(name=name, username=username, role="warden")
+    warden.set_password(password)
     db.session.add(warden)
     db.session.commit()
     flash("Warden created successfully")
@@ -133,7 +165,7 @@ def toggle_warden(warden_id):
     if current_user.role != "admin":
         flash("Unauthorized")
         return redirect(url_for("login"))
-    warden = User.query.get(warden_id)
+    warden = User.query.get_or_404(warden_id)
     warden.active = not warden.active
     db.session.commit()
     return redirect(url_for("admin_dashboard"))
@@ -144,7 +176,7 @@ def force_logout_warden(warden_id):
     if current_user.role != "admin":
         flash("Unauthorized")
         return redirect(url_for("login"))
-    warden = User.query.get(warden_id)
+    warden = User.query.get_or_404(warden_id)
     warden.session_token = None
     db.session.commit()
     flash(f"{warden.name} has been logged out")
@@ -158,7 +190,7 @@ def warden_dashboard():
         flash("Unauthorized access")
         return redirect(url_for("login"))
     challans = Challan.query.filter_by(warden_id=current_user.id).all()
-    total_amount = sum(c.challan_amount + SERVICE_FEE for c in challans)
+    total_amount = sum((c.challan_amount or 0) + SERVICE_FEE for c in challans)
     return render_template("warden_dashboard.html", challans=challans, total_amount=total_amount)
 
 @app.route("/challan/create", methods=["GET", "POST"])
@@ -168,12 +200,15 @@ def create_challan():
         flash("Unauthorized")
         return redirect(url_for("login"))
     if request.method == "POST":
-        challan_id = request.form['challan_id']
-        offender = request.form['offender']
-        vreg = request.form['vreg']
-        violation_code = request.form['violation_code']
-        challan_amount = int(request.form['challan_amount'])
-        timestamp = datetime.now().strftime("%m/%d/%Y %I:%M:%S %p")
+        challan_id = request.form.get('challan_id', '').strip()
+        offender = request.form.get('offender', '').strip()
+        vreg = request.form.get('vreg', '').strip()
+        violation_code = request.form.get('violation_code', '').strip()
+        try:
+            challan_amount = int(request.form.get('challan_amount', 0))
+        except ValueError:
+            challan_amount = 0
+        timestamp = datetime.utcnow()
         received_by = current_user.name
         warden_id = current_user.id
         challan = Challan(challan_id=challan_id, offender=offender, vreg=vreg,
@@ -188,24 +223,31 @@ def create_challan():
 @login_required
 def view_challan(challan_id):
     challan = Challan.query.get_or_404(challan_id)
-    total_amount = challan.challan_amount + SERVICE_FEE
-    qr_code = generate_qr(challan.challan_id)
+    total_amount = (challan.challan_amount or 0) + SERVICE_FEE
+    qr_code = generate_qr(challan.challan_id or "")
     return render_template("challan.html", challan=challan, total_amount=total_amount, service_fee=SERVICE_FEE, qr_code=qr_code)
 
 @app.route("/challan/<int:challan_id>/pdf")
 @login_required
 def download_pdf(challan_id):
     challan = Challan.query.get_or_404(challan_id)
-    total_amount = challan.challan_amount + SERVICE_FEE
-    qr_code = generate_qr(challan.challan_id)
+    total_amount = (challan.challan_amount or 0) + SERVICE_FEE
+    qr_code = generate_qr(challan.challan_id or "")
     html = render_template("challan_pdf.html", challan=challan, total_amount=total_amount,
                            service_fee=SERVICE_FEE, qr_code=qr_code)
-    pdf = pdfkit.from_string(html, False)  # return PDF as bytes
-    return (pdf, 200, {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': f'attachment; filename="challan_{challan.challan_id}.pdf"'
-    })
 
+    wk_cmd = os.environ.get('WKHTMLTOPDF_CMD')  # e.g. '/usr/bin/wkhtmltopdf' if available
+    if pdfkit and wk_cmd:
+        config = pdfkit.configuration(wkhtmltopdf=wk_cmd)
+        pdf_bytes = pdfkit.from_string(html, False, configuration=config)
+        return (pdf_bytes, 200, {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': f'attachment; filename="challan_{challan.challan_id or challan.id}.pdf"'
+        })
+    # fallback: if pdf not configured, return HTML page so user can "Print -> Save as PDF" from browser
+    flash("PDF generation not configured on server. Use browser Print -> Save as PDF or configure WKHTMLTOPDF_CMD.")
+    return render_template("challan_pdf.html", challan=challan, total_amount=total_amount,
+                           service_fee=SERVICE_FEE, qr_code=qr_code)
 
 @app.route("/admin/register", methods=["GET", "POST"])
 @login_required
@@ -215,16 +257,21 @@ def register_user():
         return redirect(url_for("login"))
 
     if request.method == "POST":
-        name = request.form['name']
-        username = request.form['username']
-        password = request.form['password']
-        role = request.form['role']  # admin or warden
+        name = request.form.get('name', '').strip()
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        role = request.form.get('role', 'warden')
+
+        if not username or not password:
+            flash("Username and password required")
+            return redirect(url_for("register_user"))
 
         if User.query.filter_by(username=username).first():
             flash("Username already exists")
             return redirect(url_for("register_user"))
 
-        new_user = User(name=name, username=username, password=password, role=role)
+        new_user = User(name=name, username=username, role=role)
+        new_user.set_password(password)
         db.session.add(new_user)
         db.session.commit()
         flash(f"{role.capitalize()} registered successfully")
@@ -239,10 +286,8 @@ def view_all_challans():
     if current_user.role != "admin":
         flash("Unauthorized access")
         return redirect(url_for("login"))
-    
     challans = Challan.query.order_by(Challan.timestamp.desc()).all()
     return render_template("admin_challans.html", challans=challans, service_fee=SERVICE_FEE)
-
 
 # Admin: Delete Challan
 @app.route("/admin/challan/<int:challan_id>/delete", methods=["POST"])
@@ -251,22 +296,21 @@ def delete_challan(challan_id):
     if current_user.role != "admin":
         flash("Unauthorized access")
         return redirect(url_for("login"))
-
     challan = Challan.query.get_or_404(challan_id)
     db.session.delete(challan)
     db.session.commit()
     flash(f"Challan {challan.challan_id} deleted successfully.")
     return redirect(url_for("view_all_challans"))
 
+# ----------------- Initialization -----------------
+# Create DB and a default admin if missing (safe to run on import)
+with app.app_context():
+    db.create_all()
+    if not User.query.filter_by(username="admin").first():
+        admin = User(name="Admin", username="admin", role="admin")
+        admin.set_password("admin")  # change this later
+        db.session.add(admin)
+        db.session.commit()
 
-
-# ----------------- Run App -----------------
-if __name__ == "__main__":
-    with app.app_context():  # fixes app_context errors
-        db.create_all()
-        if not User.query.filter_by(username="admin").first():
-            admin = User(name="Admin", username="admin", password="admin", role="admin")
-            db.session.add(admin)
-            db.session.commit()
-    app.run(debug=False, use_reloader=False)
-
+# Note: On PythonAnywhere, the WSGI file will import `app` and run it via gunicorn/uWSGI.
+# Do NOT call app.run() here.
