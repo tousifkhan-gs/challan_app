@@ -11,7 +11,8 @@ import pdfkit
 # ----------------- Flask App Setup -----------------
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'supersecretkey'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///traffic.db?check_same_thread=False'
+#app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///traffic.db?check_same_thread=False'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///traffic.db'
 db = SQLAlchemy(app)
 
 login_manager = LoginManager(app)
@@ -267,4 +268,5 @@ if __name__ == "__main__":
             admin = User(name="Admin", username="admin", password="admin", role="admin")
             db.session.add(admin)
             db.session.commit()
-    app.run(debug=True, use_reloader=False)
+    app.run(debug=False, use_reloader=False)
+
