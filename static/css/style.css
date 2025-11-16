@@ -1,0 +1,37 @@
+body {
+    font-family: "Courier New", monospace;
+    background: #f3f3f3;
+    padding: 10px;
+}
+
+.container {
+    max-width: 480px;
+    margin: auto;
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 0 5px rgba(0,0,0,0.1);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+table, th, td {
+    border: 1px solid #ddd;
+    padding: 6px;
+}
+
+button, input, a {
+    padding: 8px 12px;
+    margin: 4px 0;
+    font-size: 14px;
+}
+
+@media screen and (max-width: 480px) {
+    table, th, td {
+        font-size: 12px;
+    }
+}

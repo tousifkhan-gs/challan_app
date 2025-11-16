@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Challan Print</title>
+
+    <style>
+        body {
+            font-family: "Courier New", monospace;
+            padding: 20px;
+            background: #f3f3f3;
+        }
+
+        .receipt {
+            width: 280px;
+            background: white;
+            padding: 20px;
+            margin: auto;
+            border: 1px solid #ddd;
+            text-align: center; /* EVERYTHING CENTER */
+        }
+
+        .separator {
+            margin: 8px 0;
+        }
+        .separator::after {
+            content: "....................................";
+            font-size: 12px;
+        }
+
+        .section {
+            margin: 8px 0;
+        }
+
+        .qr img {
+            width: 120px;
+            height: 120px;
+            margin: 10px 0;
+        }
+
+        @media print {
+            body {
+                background: white;
+            }
+            .print-btn, .download-btn, .pdf-btn {
+                display: none;
+            }
+            .receipt {
+                border: none;
+                margin: 0;
+                width: 100%;
+            }
+        }
+
+        .print-btn, .download-btn, .pdf-btn {
+            display: block;
+            width: 210px;
+            margin: 10px auto;
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #1e293b;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            text-align: center;
+            text-decoration: none;
+        }
+
+    </style>
+</head>
+<body>
+
+<!-- Buttons -->
+<!-- <button class="print-btn" onclick="window.print()">Print Challan</button> -->
+
+<button class="download-btn" onclick="downloadChallan()">Download as Image</button>
+
+<!-- <a class="pdf-btn" href="{{ url_for('download_pdf', challan_id=challan.id) }}">
+    Download PDF
+</a> -->
+
+<div id="challan" class="receipt">
+
+    <!-- Header -->
+    <div style="font-size:24px; padding-bottom: 4px;"><strong>Khyber Pakhtunkhwa</strong></div>
+    <div style="font-size:24px;"><strong>Traffic Police</strong></div>
+
+    <div class="separator" style="margin-top: -2px;"></div>
+
+    <!-- District + Status -->
+    <div class="section">
+        <div style="font-size:24px; margin-top: -6px; padding-bottom: 3px;"><strong>Bannu</strong></div>
+        <div style="font-size:24px; padding-bottom: 3px;"><strong>{{ challan.challan_id }}</strong></div>
+        <div style="font-size:24px;"><strong>PAID</strong></div>
+    </div>
+
+    <!-- Violator Info -->
+    <div class="section">
+        <div style="padding-bottom: 6px; font-weight: 600; font-size:20px;">Offender : {{ challan.offender }}</div>
+        <div style="font-weight: 600; font-size:20px;">V.Reg# : {{ challan.vreg }}</div>
+    </div>
+
+    <div class="separator" style="margin-top: -3px;"></div>
+
+    <!-- Details -->
+    <div class="section">
+        <div style="padding-bottom: 6px; font-size:18px;">Violation Code's : ({{ challan.violation_code }})</div>
+        <div style="padding-bottom: 6px; font-size:18px;">Challan Amount : PKR. {{ challan.challan_amount }}</div>
+        <div style="padding-bottom: 6px; font-size:18px;">Service Fee &nbsp;&nbsp; : PKR. &nbsp;{{ service_fee }}</div>
+        <div style="padding-bottom: 1px; font-size:18px;">(Incl. of KPSTS)</div>
+    </div>
+
+    <div class="separator" style="margin-top: -7px;"></div>
+
+    <!-- Total Amount -->
+    <div class="section" style="font-size:18px;">
+        Total Amount : PKR. {{ total_amount }}
+    </div>
+
+    <!-- QR Code -->
+    <div class="qr" style="margin-top: -20px;">
+        <img src="{{ qr_code }}" alt="QR">
+    </div>
+
+    <!-- Officer Details -->
+    <div class="section" style="margin-top: -14px; font-size:18px;">
+        <div>Received By : {{ challan.received_by }}</div>
+        <div>2522 (2200)</div>
+    </div>
+
+    <!-- Date/Time -->
+    <div class="section" style="font-size:18px;">
+        <div>{{ challan.timestamp }}</div>
+    </div>
+
+    <!-- Footer -->
+    <div class="section" style="font-size:16px;">
+        Traffic Police Helpline 1915.
+    </div>
+
+</div>
+
+<!-- HTML2CANVAS FOR IMAGE DOWNLOAD -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+<script>
+function downloadChallan() {
+    html2canvas(document.getElementById("challan"), { scale: 3 }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = "challan.png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+    });
+}
+</script>
+
+</body>
+</html>

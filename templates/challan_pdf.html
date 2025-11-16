@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Challan PDF</title>
+
+    <style>
+        body {
+            font-family: "Courier New", monospace;
+            padding: 20px;
+            background: white;
+        }
+
+        .receipt {
+            width: 280px;
+            background: white;
+            padding: 20px;
+            margin: auto;
+            border: 1px solid #000;
+            text-align: center;
+        }
+
+        .separator {
+            margin: 10px 0;
+        }
+        .separator::after {
+            content: "....................................";
+            font-size: 12px;
+        }
+
+        .section {
+            margin: 10px 0;
+        }
+
+        .qr img {
+            width: 150px;
+            height: 150px;
+        }
+
+        /* Ensure consistent PDF output */
+        @page {
+            size: A4;
+            margin: 20px;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="receipt">
+
+    <!-- Header -->
+    <div><strong>Khyber Pakhtunkhwa</strong></div>
+    <div><strong>Traffic Police</strong></div>
+
+    <div class="separator"></div>
+
+    <!-- District + Status -->
+    <div class="section">
+        <div><strong>{{ challan.district }}</strong></div>
+        <div><strong>{{ challan.challan_id }}</strong></div>
+        <div><strong>{{ challan.status }}</strong></div>
+    </div>
+
+    <!-- Violator Info -->
+    <div class="section">
+        <div style="padding-bottom: 6px;">Offender : {{ challan.offender }}</div>
+        <div>V.Reg# : {{ challan.vreg }}</div>
+    </div>
+
+    <div class="separator"></div>
+
+    <!-- Details -->
+    <div class="section">
+        <div style="padding-bottom: 6px;">Violation Code's : ({{ challan.violation_code }})</div>
+        <div style="padding-bottom: 6px;">Challan Amount : PKR. {{ challan.challan_amount }}</div>
+        <div style="padding-bottom: 6px;">Service Fee : PKR. {{ service_fee }}</div>
+        <div style="padding-bottom: 6px;">(Incl. of KPSTS)</div>
+    </div>
+
+    <div class="separator"></div>
+
+    <!-- Total Amount -->
+    <div class="section">
+        <strong>Total Amount : PKR. {{ total_amount }}</strong>
+    </div>
+
+    <!-- QR Code -->
+    <div class="qr">
+        <img src="{{ qr_code }}" alt="QR Code">
+    </div>
+
+    <!-- Officer Details -->
+    <div class="section">
+        <div>Received By : {{ challan.received_by }}</div>
+        <div>2522 (2200)</div>
+    </div>
+
+    <!-- Date/Time -->
+    <div class="section">
+        <div>{{ challan.timestamp }}</div>
+    </div>
+
+    <!-- Footer -->
+    <div class="section">
+        Traffic Police Helpline 1915.
+    </div>
+
+</div>
+
+</body>
+</html>
