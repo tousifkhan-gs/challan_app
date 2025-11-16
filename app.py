@@ -1,45 +1,40 @@
 import os
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin, login_user, login_required, current_user, logout_user
+from flask_login import (
+    LoginManager, UserMixin, login_user, login_required,
+    current_user, logout_user
+)
+from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import qrcode
 import io
 import base64
-from werkzeug.security import generate_password_hash, check_password_hash
 
-# ======================================================
-#               FLASK APP CONFIGURATION
-# ======================================================
+# ----------------- Flask App Setup -----------------
 app = Flask(__name__)
 
-# Use a long random key in production
-app.config["SECRET_KEY"] = "SuperSecretKeyforMyChallanApp1.0MVP"
-
-# SQLite Production-friendly config
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///traffic.db"
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+# Production settings (no .env needed)
+app.config['SECRET_KEY'] = 'CHANGE_THIS_SECRET_KEY_123456789'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///traffic.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
 login_manager = LoginManager(app)
-login_manager.login_view = "login"
+login_manager.login_view = 'login'
 
 SERVICE_FEE = 17
 
-
-# ======================================================
-#                       MODELS
-# ======================================================
+# ----------------- Models -----------------
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150))
-    username = db.Column(db.String(50), unique=True)
-    password = db.Column(db.String(200))        # hashed
-    role = db.Column(db.String(20))             # admin / warden
+    username = db.Column(db.String(50), unique=True, nullable=False)
+    password = db.Column(db.String(200), nullable=False)
+    role = db.Column(db.String(20))  # admin or warden
     active = db.Column(db.Boolean, default=True)
     session_token = db.Column(db.String(100), nullable=True)
-
 
 class Challan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -50,20 +45,17 @@ class Challan(db.Model):
     challan_amount = db.Column(db.Integer)
     received_by = db.Column(db.String(100))
     timestamp = db.Column(db.String(50))
-    warden_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    warden_id = db.Column(db.Integer, db.ForeignKey('user.id'))
 
-
-# ======================================================
-#                   LOGIN MANAGER
-# ======================================================
+# ----------------- Login Manager -----------------
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
 
+# ----------------- Force Logout System -----------------
 @app.before_request
-def enforce_force_logout():
-    """Logs out a warden if admin forced logout."""
+def check_force_logout():
     if current_user.is_authenticated and current_user.role == "warden":
         token = session.get("session_token")
         if token != current_user.session_token:
@@ -72,23 +64,20 @@ def enforce_force_logout():
             return redirect(url_for("login"))
 
 
-# ======================================================
-#                   QR GENERATOR
-# ======================================================
+# ----------------- QR Code -----------------
 def generate_qr(data):
     qr = qrcode.QRCode(box_size=10, border=2)
     qr.add_data(data)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    img_str = base64.b64encode(buffer.getvalue()).decode()
+    return f"data:image/png;base64,{img_str}"
 
 
-# ======================================================
-#                   AUTH ROUTES
-# ======================================================
+# ----------------- Routes -----------------
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -100,6 +89,7 @@ def login():
         if user and check_password_hash(user.password, password) and user.active:
             login_user(user)
 
+            # Issue session token
             token = os.urandom(16).hex()
             user.session_token = token
             session["session_token"] = token
@@ -107,7 +97,7 @@ def login():
 
             return redirect(url_for("admin_dashboard" if user.role == "admin" else "warden_dashboard"))
 
-        flash("Invalid credentials or inactive user.")
+        flash("Invalid username or password.")
     return render_template("login.html")
 
 
@@ -118,14 +108,12 @@ def logout():
     return redirect(url_for("login"))
 
 
-# ======================================================
-#                   ADMIN ROUTES
-# ======================================================
+# ----------------- Admin Routes -----------------
 @app.route("/admin/dashboard")
 @login_required
 def admin_dashboard():
     if current_user.role != "admin":
-        flash("Unauthorized access.")
+        flash("Unauthorized access")
         return redirect(url_for("login"))
 
     wardens = User.query.filter_by(role="warden").all()
@@ -148,27 +136,18 @@ def admin_dashboard():
 @login_required
 def create_warden():
     if current_user.role != "admin":
-        flash("Unauthorized.")
+        flash("Unauthorized")
         return redirect(url_for("login"))
 
     name = request.form["name"]
     username = request.form["username"]
-    password = request.form["password"]
+    password = generate_password_hash(request.form["password"])
 
-    if User.query.filter_by(username=username).first():
-        flash("Username already exists.")
-        return redirect(url_for("admin_dashboard"))
-
-    new_w = User(
-        name=name,
-        username=username,
-        password=generate_password_hash(password),
-        role="warden",
-    )
-    db.session.add(new_w)
+    warden = User(name=name, username=username, password=password, role="warden")
+    db.session.add(warden)
     db.session.commit()
 
-    flash("Warden created successfully.")
+    flash("Warden created successfully")
     return redirect(url_for("admin_dashboard"))
 
 
@@ -176,11 +155,11 @@ def create_warden():
 @login_required
 def toggle_warden(warden_id):
     if current_user.role != "admin":
-        flash("Unauthorized.")
+        flash("Unauthorized")
         return redirect(url_for("login"))
 
-    w = User.query.get_or_404(warden_id)
-    w.active = not w.active
+    warden = User.query.get_or_404(warden_id)
+    warden.active = not warden.active
     db.session.commit()
 
     return redirect(url_for("admin_dashboard"))
@@ -190,51 +169,23 @@ def toggle_warden(warden_id):
 @login_required
 def force_logout_warden(warden_id):
     if current_user.role != "admin":
-        flash("Unauthorized.")
+        flash("Unauthorized")
         return redirect(url_for("login"))
 
-    w = User.query.get_or_404(warden_id)
-    w.session_token = None
+    warden = User.query.get(warden_id)
+    warden.session_token = None
     db.session.commit()
 
-    flash(f"{w.name} has been logged out.")
+    flash(f"{warden.name} has been logged out.")
     return redirect(url_for("admin_dashboard"))
 
 
-@app.route("/admin/challans")
-@login_required
-def view_all_challans():
-    if current_user.role != "admin":
-        flash("Unauthorized access.")
-        return redirect(url_for("login"))
-
-    challans = Challan.query.order_by(Challan.timestamp.desc()).all()
-    return render_template("admin_challans.html", challans=challans, service_fee=SERVICE_FEE)
-
-
-@app.route("/admin/challan/<int:challan_id>/delete", methods=["POST"])
-@login_required
-def delete_challan(challan_id):
-    if current_user.role != "admin":
-        flash("Unauthorized access.")
-        return redirect(url_for("login"))
-
-    ch = Challan.query.get_or_404(challan_id)
-    db.session.delete(ch)
-    db.session.commit()
-
-    flash(f"Challan {ch.challan_id} deleted successfully.")
-    return redirect(url_for("view_all_challans"))
-
-
-# ======================================================
-#                   WARDEN ROUTES
-# ======================================================
+# ----------------- Warden Routes -----------------
 @app.route("/warden/dashboard")
 @login_required
 def warden_dashboard():
     if current_user.role != "warden":
-        flash("Unauthorized access.")
+        flash("Unauthorized access")
         return redirect(url_for("login"))
 
     challans = Challan.query.filter_by(warden_id=current_user.id).all()
@@ -247,20 +198,28 @@ def warden_dashboard():
 @login_required
 def create_challan():
     if current_user.role != "warden":
-        flash("Unauthorized.")
+        flash("Unauthorized")
         return redirect(url_for("login"))
 
     if request.method == "POST":
+        challan_id = request.form["challan_id"]
+        offender = request.form["offender"]
+        vreg = request.form["vreg"]
+        violation_code = request.form["violation_code"]
+        challan_amount = int(request.form["challan_amount"])
+        timestamp = datetime.now().strftime("%m/%d/%Y %I:%M:%S %p")
+
         challan = Challan(
-            challan_id=request.form["challan_id"],
-            offender=request.form["offender"],
-            vreg=request.form["vreg"],
-            violation_code=request.form["violation_code"],
-            challan_amount=int(request.form["challan_amount"]),
+            challan_id=challan_id,
+            offender=offender,
+            vreg=vreg,
+            violation_code=violation_code,
+            challan_amount=challan_amount,
             received_by=current_user.name,
-            timestamp=datetime.now().strftime("%m/%d/%Y %I:%M:%S %p"),
-            warden_id=current_user.id
+            timestamp=timestamp,
+            warden_id=current_user.id,
         )
+
         db.session.add(challan)
         db.session.commit()
 
@@ -275,26 +234,58 @@ def view_challan(challan_id):
     challan = Challan.query.get_or_404(challan_id)
     total_amount = challan.challan_amount + SERVICE_FEE
     qr_code = generate_qr(challan.challan_id)
-    return render_template("challan.html", challan=challan, total_amount=total_amount, service_fee=SERVICE_FEE, qr_code=qr_code)
+
+    return render_template("challan.html",
+                           challan=challan,
+                           total_amount=total_amount,
+                           service_fee=SERVICE_FEE,
+                           qr_code=qr_code)
 
 
-# ======================================================
-#                   APP STARTUP
-# ======================================================
+# ----------------- Admin View Challans -----------------
+@app.route("/admin/challans")
+@login_required
+def view_all_challans():
+    if current_user.role != "admin":
+        flash("Unauthorized access")
+        return redirect(url_for("login"))
+
+    challans = Challan.query.order_by(Challan.timestamp.desc()).all()
+    return render_template("admin_challans.html",
+                           challans=challans,
+                           service_fee=SERVICE_FEE)
+
+
+@app.route("/admin/challan/<int:challan_id>/delete", methods=["POST"])
+@login_required
+def delete_challan(challan_id):
+    if current_user.role != "admin":
+        flash("Unauthorized")
+        return redirect(url_for("login"))
+
+    challan = Challan.query.get_or_404(challan_id)
+    db.session.delete(challan)
+    db.session.commit()
+
+    flash(f"Challan {challan.challan_id} deleted successfully.")
+    return redirect(url_for("view_all_challans"))
+
+
+# ----------------- Run App -----------------
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
 
-        # Create admin if not exists
-        admin = User.query.filter_by(username="admin").first()
-        if not admin:
-            a = User(
+        # Create default admin (hashed password)
+        if not User.query.filter_by(username="admin").first():
+            admin = User(
                 name="Admin",
                 username="admin",
                 password=generate_password_hash("admin"),
-                role="admin",
+                role="admin"
             )
-            db.session.add(a)
+            db.session.add(admin)
             db.session.commit()
+            print("Admin user created: username=admin, password=admin")
 
-    app.run(debug=False, use_reloader=False, host="0.0.0.0", port=5000)
+    app.run(debug=False, host="0.0.0.0")
