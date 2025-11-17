@@ -6,6 +6,7 @@ from flask_login import (
     current_user, logout_user
 )
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import qrcode
 import io
 import base64
@@ -205,7 +206,9 @@ def create_challan():
         vreg = request.form["vreg"]
         violation_code = request.form["violation_code"]
         challan_amount = int(request.form["challan_amount"])
-        timestamp = datetime.now().strftime("%m/%d/%Y %I:%M:%S %p")
+
+        # ---------- Pakistan Standard Time ----------
+        timestamp = datetime.now(ZoneInfo("Asia/Karachi")).strftime("%m/%d/%Y %I:%M:%S %p")
 
         challan = Challan(
             challan_id=challan_id,
@@ -224,6 +227,7 @@ def create_challan():
         return redirect(url_for("view_challan", challan_id=challan.id))
 
     return render_template("challan_form.html")
+
 
 
 @app.route("/challan/<int:challan_id>")
@@ -313,4 +317,5 @@ if __name__ == "__main__":
             print("Admin user created: username=admin, password=admin")
 
     app.run(debug=False, host="0.0.0.0")
+
 
