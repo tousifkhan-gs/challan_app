@@ -94,8 +94,8 @@
 
     <!-- Violator Info -->
     <div class="section">
-        <div style="padding-bottom: 6px; font-weight: 600; font-size:20px;">Offender : {{ challan.offender }}</div>
-        <div style="font-weight: 600; font-size:20px;">V.Reg# : {{ challan.vreg }}</div>
+        <div style="padding-bottom: 6px; font-weight: 600; font-size:20px;">Offender : {{ challan.offender|upper }}</div>
+        <div style="font-weight: 600; font-size:20px;">V.Reg# : {{ challan.vreg|upper }}</div>
     </div>
 
     <div class="separator" style="margin-top: -3px;"></div>
@@ -116,12 +116,12 @@
     </div>
 
     <!-- QR Code -->
-    <div class="qr" style="margin-top: -20px;">
+    <div class="qr" style="margin-top: -16px;">
         <img src="{{ qr_code }}" alt="QR">
     </div>
 
     <!-- Officer Details -->
-    <div class="section" style="margin-top: -14px; font-size:18px;">
+    <div class="section" style="margin-top: -10px; font-size:18px;">
         <div>Received By : {{ challan.received_by }}</div>
      <!--   <div>2522 (2200)</div>  -->
     </div>
@@ -154,5 +154,6 @@ function downloadChallan() {
 
 </body>
 </html>
+
 
 
