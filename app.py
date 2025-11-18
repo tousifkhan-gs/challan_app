@@ -37,7 +37,7 @@ class User(UserMixin, db.Model):
 
 class Challan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    challan_id = db.Column(db.String(50), unique=True)
+    challan_id = db.Column(db.String(50))
     offender = db.Column(db.String(100))
     vreg = db.Column(db.String(50))
     violation_code = db.Column(db.String(50))
@@ -235,7 +235,10 @@ def create_challan():
 def view_challan(challan_id):
     challan = Challan.query.get_or_404(challan_id)
     total_amount = challan.challan_amount + SERVICE_FEE
-    qr_code = generate_qr(challan.challan_id)
+     
+    # --- Updated QR Format ---
+    qr_data = f"AEA10A8D{challan.challan_id}|{total_amount}"
+    qr_code = generate_qr(qr_data)
 
     return render_template("challan.html",
                            challan=challan,
@@ -317,5 +320,6 @@ if __name__ == "__main__":
             print("Admin user created: username=admin, password=admin")
 
     app.run(debug=False, host="0.0.0.0")
+
 
 
