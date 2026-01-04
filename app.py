@@ -77,7 +77,7 @@ def generate_qr(data):
 
 
 # ----------------- Routes -----------------
-@app.route("/login/dashboard-login", methods=["GET", "POST"])
+@app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         username = request.form["username"].strip()
@@ -108,7 +108,7 @@ def logout():
 
 
 # ----------------- Admin Routes -----------------
-@app.route("/admin/dashboard/new")
+@app.route("/admin/dashboard")
 @login_required
 def admin_dashboard():
     if current_user.role != "admin":
@@ -131,7 +131,7 @@ def admin_dashboard():
     return render_template("admin_dashboard.html", warden_stats=warden_stats)
 
 
-@app.route("/admin/warden/create/new", methods=["POST"])
+@app.route("/admin/warden/create", methods=["POST"])
 @login_required
 def create_warden():
     if current_user.role != "admin":
@@ -150,7 +150,7 @@ def create_warden():
     return redirect(url_for("admin_dashboard"))
 
 
-@app.route("/admin/warden/toggle/new/<int:warden_id>")
+@app.route("/admin/warden/toggle/<int:warden_id>")
 @login_required
 def toggle_warden(warden_id):
     if current_user.role != "admin":
@@ -180,7 +180,7 @@ def force_logout_warden(warden_id):
 
 
 # ----------------- Warden Routes -----------------
-@app.route("/warden/dashboard/new")
+@app.route("/warden/dashboard")
 @login_required
 def warden_dashboard():
     if current_user.role != "warden":
@@ -193,7 +193,7 @@ def warden_dashboard():
     return render_template("warden_dashboard.html", challans=challans, total_amount=total_amount)
 
 
-@app.route("/challan/create/new", methods=["GET", "POST"])
+@app.route("/challan/create", methods=["GET", "POST"])
 @login_required
 def create_challan():
     if current_user.role != "warden":
@@ -230,7 +230,7 @@ def create_challan():
 
 
 
-@app.route("/challan/new/<int:challan_id>")
+@app.route("/challan/<int:challan_id>")
 @login_required
 def view_challan(challan_id):
     challan = Challan.query.get_or_404(challan_id)
@@ -248,7 +248,7 @@ def view_challan(challan_id):
 
 
 # ----------------- Admin View All Challans -----------------
-@app.route("/admin/challans/new")
+@app.route("/admin/challans")
 @login_required
 def view_all_challans():
     if current_user.role != "admin":
@@ -261,7 +261,7 @@ def view_all_challans():
                            service_fee=SERVICE_FEE)
 
 
-@app.route("/admin/challan/new/<int:challan_id>/delete", methods=["POST"])
+@app.route("/admin/challan/<int:challan_id>/delete", methods=["POST"])
 @login_required
 def delete_challan(challan_id):
     if current_user.role != "admin":
@@ -276,7 +276,7 @@ def delete_challan(challan_id):
     return redirect(url_for("view_all_challans"))
 
 
-@app.route("/admin/register/new", methods=["GET", "POST"])
+@app.route("/admin/register", methods=["GET", "POST"])
 @login_required
 def register_user():
     if current_user.role != "admin":
@@ -320,6 +320,7 @@ if __name__ == "__main__":
             print("Admin user created: username=admin, password=admin")
 
     app.run(debug=False, host="0.0.0.0")
+
 
 
 
